@@ -3,7 +3,6 @@
 @using System.IO.Compression
 @using Kiota.Builder
 @using Kiota.Builder.Configuration
-@inject ILoggerFactory loggerFactory;
 @inject HttpClient client;
 @inject IJSRuntime JS;
 
@@ -35,13 +34,16 @@
 
     async Task Generate()
     {
+        FilesystemLog = string.Empty;
+
         var sw = new Stopwatch();
         sw.Start();
-        FilesystemLog = $"{sw.Elapsed} Generating...\n";
+
+        Log("Generating...");
 
         var filesystem = new InMemoryFilesystem();
-        filesystem.NodeCreated += (_, e) => FilesystemLog += $"{sw.Elapsed} +{(e.IsDirectory ? "d" : "f")} {e.Path}/{e.Name}\n";
-        filesystem.NodeDeleted += (_, e) => FilesystemLog += $"{sw.Elapsed} -{(e.IsDirectory ? "d" : "f")} {e.Path}/{e.Name}\n";
+        filesystem.NodeCreated += (_, e) => Log($"+{(e.IsDirectory ? "d" : "f")} {e.Path}/{e.Name}");
+        filesystem.NodeDeleted += (_, e) => Log($"-{(e.IsDirectory ? "d" : "f")} {e.Path}/{e.Name}");
 
         var config = new GenerationConfiguration
         {
@@ -49,19 +51,23 @@
             OpenAPIFilePath = SpecUrl,
         };
 
-        var logger = loggerFactory.CreateLogger<KiotaBuilder>();
+        var logger = new StringLogger<KiotaBuilder>(Log);
         var builder = new KiotaBuilder(logger, config, client);
         await builder.GenerateClientAsync(CancellationToken.None);
 
-        FilesystemLog += $"\n{sw.Elapsed} Generation complete. Zipping...\n";
+        Log("Generation complete. Zipping...");
 
         await using var zipStream = CreateZipArchive(filesystem);
 
-        FilesystemLog += $"\n{sw.Elapsed} Zipping complete. Downloading...\n";
+        Log("Zipping complete. Downloading...");
 
         await DownloadFileFromStream(zipStream);
 
-        FilesystemLog += $"\n{sw.Elapsed} Download complete.\n";
+        Log("Done.");
+
+        return;
+
+        void Log(string message) => FilesystemLog += $"{sw.Elapsed:mm\\:ss\\.fff} {message}\n";
     }
 
     private static Stream CreateZipArchive(InMemoryFilesystem filesystem)
@@ -94,4 +100,17 @@
         await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
     }
 
+    class StringLogger<T>(Action<string> onLog) : ILogger<T>
+    {
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            var message = formatter(state, exception);
+
+            onLog(message);
+        }
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+    }
 }
