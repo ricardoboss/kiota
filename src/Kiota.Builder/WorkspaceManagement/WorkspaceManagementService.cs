@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Kiota.Builder.Configuration;
 using Kiota.Builder.Extensions;
+using Kiota.Builder.Filesystem;
 using Kiota.Builder.Lock;
 using Kiota.Builder.Manifest;
 using Microsoft.Extensions.Logging;
@@ -34,7 +35,7 @@ public class WorkspaceManagementService
         WorkingDirectory = workingDirectory;
         workspaceConfigurationStorageService = new(workingDirectory);
         descriptionStorageService = new(workingDirectory);
-        openApiDocumentDownloadService = new(httpClient, Logger);
+        openApiDocumentDownloadService = new(httpClient, Logger, new PhysicalFilesystem()); // TODO(ricardoboss): replace with IFilesystem
     }
     private readonly OpenApiDocumentDownloadService openApiDocumentDownloadService;
     private readonly LockManagementService lockManagementService = new();
@@ -85,22 +86,22 @@ public class WorkspaceManagementService
             {
                 DescriptionHash = descriptionHash ?? string.Empty,
             };
-            await lockManagementService.WriteLockFileAsync(generationConfiguration.OutputPath, configurationLock, cancellationToken).ConfigureAwait(false);
+            await lockManagementService.WriteLockFileAsync(generationConfiguration.OutputPath, generationConfiguration.Filesystem, configurationLock, cancellationToken).ConfigureAwait(false);
         }
     }
-    public async Task RestoreStateAsync(string outputPath, CancellationToken cancellationToken = default)
+    public async Task RestoreStateAsync(string outputPath, IFilesystem filesystem, CancellationToken cancellationToken = default)
     {
         if (UseKiotaConfig)
             await workspaceConfigurationStorageService.RestoreConfigAsync(cancellationToken).ConfigureAwait(false);
         else
-            await lockManagementService.RestoreLockFileAsync(outputPath, cancellationToken).ConfigureAwait(false);
+            await lockManagementService.RestoreLockFileAsync(outputPath, filesystem, cancellationToken).ConfigureAwait(false);
     }
-    public async Task BackupStateAsync(string outputPath, CancellationToken cancellationToken = default)
+    public async Task BackupStateAsync(string outputPath, IFilesystem filesystem, CancellationToken cancellationToken = default)
     {
         if (UseKiotaConfig)
             await workspaceConfigurationStorageService.BackupConfigAsync(cancellationToken).ConfigureAwait(false);
         else
-            await lockManagementService.BackupLockFileAsync(outputPath, cancellationToken).ConfigureAwait(false);
+            await lockManagementService.BackupLockFileAsync(outputPath, filesystem, cancellationToken).ConfigureAwait(false);
     }
     private static readonly KiotaLockComparer lockComparer = new();
     private static readonly ApiClientConfigurationComparer clientConfigurationComparer = new();
@@ -139,7 +140,7 @@ public class WorkspaceManagementService
         }
         else
         {
-            var existingLock = await lockManagementService.GetLockFromDirectoryAsync(inputConfig.OutputPath, cancellationToken).ConfigureAwait(false);
+            var existingLock = await lockManagementService.GetLockFromDirectoryAsync(inputConfig.OutputPath, inputConfig.Filesystem, cancellationToken).ConfigureAwait(false);
             var configurationLock = new KiotaLock(inputConfig)
             {
                 DescriptionHash = descriptionHash,
@@ -242,7 +243,7 @@ public class WorkspaceManagementService
         apiManifest ??= new("application"); //TODO get the application name
         return (wsConfig, apiManifest);
     }
-    private async Task<List<GenerationConfiguration>> LoadGenerationConfigurationsFromLockFilesAsync(string lockDirectory, string clientName, CancellationToken cancellationToken = default)
+    private async Task<List<GenerationConfiguration>> LoadGenerationConfigurationsFromLockFilesAsync(string lockDirectory, string clientName, IFilesystem filesystem, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(lockDirectory);
         if (!UseKiotaConfig)
@@ -260,16 +261,16 @@ public class WorkspaceManagementService
             throw new InvalidOperationException("Multiple lock files found in the specified directory and the client name was specified");
         var clientsGenerationConfigurations = new List<GenerationConfiguration?>();
         if (lockFiles.Length == 1)
-            clientsGenerationConfigurations.Add(await LoadConfigurationFromLockAsync(clientNamePassed ? clientName : string.Empty, lockFiles[0], cancellationToken).ConfigureAwait(false));
+            clientsGenerationConfigurations.Add(await LoadConfigurationFromLockAsync(clientNamePassed ? clientName : string.Empty, lockFiles[0], filesystem, cancellationToken).ConfigureAwait(false));
         else
-            clientsGenerationConfigurations.AddRange(await Task.WhenAll(lockFiles.Select(x => LoadConfigurationFromLockAsync(string.Empty, x, cancellationToken))).ConfigureAwait(false));
+            clientsGenerationConfigurations.AddRange(await Task.WhenAll(lockFiles.Select(x => LoadConfigurationFromLockAsync(string.Empty, x, filesystem, cancellationToken))).ConfigureAwait(false));
         return clientsGenerationConfigurations.OfType<GenerationConfiguration>().ToList();
     }
-    public async Task<IEnumerable<string>> MigrateFromLockFileAsync(string clientName, string lockDirectory, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<string>> MigrateFromLockFileAsync(string clientName, string lockDirectory, IFilesystem filesystem, CancellationToken cancellationToken = default)
     {
         var (wsConfig, apiManifest) = await LoadConfigurationAndManifestAsync(cancellationToken).ConfigureAwait(false);
 
-        var clientsGenerationConfigurations = await LoadGenerationConfigurationsFromLockFilesAsync(lockDirectory, clientName, cancellationToken).ConfigureAwait(false);
+        var clientsGenerationConfigurations = await LoadGenerationConfigurationsFromLockFilesAsync(lockDirectory, clientName, filesystem, cancellationToken).ConfigureAwait(false);
         foreach (var generationConfiguration in clientsGenerationConfigurations.ToArray()) //to avoid modifying the collection as we iterate and remove some entries
         {
 
@@ -310,20 +311,20 @@ public class WorkspaceManagementService
                         { MigrationPlaceholderPath, new HashSet<string> { "GET" } }
                     },
                     WorkingDirectory));
-            lockManagementService.DeleteLockFile(Path.Combine(WorkingDirectory, clientConfiguration.OutputPath));
+            lockManagementService.DeleteLockFile(Path.Combine(WorkingDirectory, clientConfiguration.OutputPath), generationConfiguration.Filesystem);
         }
         await workspaceConfigurationStorageService.UpdateWorkspaceConfigurationAsync(wsConfig, apiManifest, cancellationToken).ConfigureAwait(false);
         return clientsGenerationConfigurations.OfType<GenerationConfiguration>().Select(static x => x.ClientClassName);
     }
     internal const string MigrationPlaceholderPath = "/migration-placeholder";
-    private async Task<GenerationConfiguration?> LoadConfigurationFromLockAsync(string clientName, string lockFilePath, CancellationToken cancellationToken)
+    private async Task<GenerationConfiguration?> LoadConfigurationFromLockAsync(string clientName, string lockFilePath, IFilesystem filesystem, CancellationToken cancellationToken)
     {
         if (Path.GetDirectoryName(lockFilePath) is not string lockFileDirectory)
         {
             Logger.LogWarning("The lock file {LockFilePath} is not in a directory, it will be skipped", lockFilePath);
             return null;
         }
-        var lockInfo = await lockManagementService.GetLockFromDirectoryAsync(lockFileDirectory, cancellationToken).ConfigureAwait(false);
+        var lockInfo = await lockManagementService.GetLockFromDirectoryAsync(lockFileDirectory, filesystem, cancellationToken).ConfigureAwait(false);
         if (lockInfo is null)
         {
             Logger.LogWarning("The lock file {LockFilePath} is not valid, it will be skipped", lockFilePath);

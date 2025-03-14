@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using Kiota.Builder.CodeDOM;
+using Kiota.Builder.Filesystem;
 using Kiota.Builder.PathSegmenters;
 using Kiota.Builder.Writers.Cli;
 using Kiota.Builder.Writers.CSharp;
@@ -180,21 +181,21 @@ public abstract class LanguageWriter
             Writers[typeof(T)] = writer;
     }
     private readonly Dictionary<Type, object> Writers = []; // we have to type as object because dotnet doesn't have type capture i.e eq for `? extends CodeElement`
-    public static LanguageWriter GetLanguageWriter(GenerationLanguage language, string outputPath, string clientNamespaceName, bool usesBackingStore = false, bool excludeBackwardCompatible = false)
+    public static LanguageWriter GetLanguageWriter(GenerationLanguage language, IFilesystem filesystem, string outputPath, string clientNamespaceName, bool usesBackingStore = false, bool excludeBackwardCompatible = false)
     {
         return language switch
         {
-            GenerationLanguage.CSharp => new CSharpWriter(outputPath, clientNamespaceName),
-            GenerationLanguage.Java => new JavaWriter(outputPath, clientNamespaceName),
-            GenerationLanguage.TypeScript => new TypeScriptWriter(outputPath, clientNamespaceName),
-            GenerationLanguage.Ruby => new RubyWriter(outputPath, clientNamespaceName),
-            GenerationLanguage.PHP => new PhpWriter(outputPath, clientNamespaceName, usesBackingStore),
-            GenerationLanguage.Python => new PythonWriter(outputPath, clientNamespaceName, usesBackingStore),
-            GenerationLanguage.Go => new GoWriter(outputPath, clientNamespaceName, excludeBackwardCompatible),
-            GenerationLanguage.CLI => new CliWriter(outputPath, clientNamespaceName),
-            GenerationLanguage.Swift => new SwiftWriter(outputPath, clientNamespaceName),
-            GenerationLanguage.Dart => new DartWriter(outputPath, clientNamespaceName),
-            GenerationLanguage.HTTP => new HttpWriter(outputPath, clientNamespaceName),
+            GenerationLanguage.CSharp => new CSharpWriter(filesystem, outputPath, clientNamespaceName),
+            GenerationLanguage.Java => new JavaWriter(filesystem, outputPath, clientNamespaceName),
+            GenerationLanguage.TypeScript => new TypeScriptWriter(filesystem, outputPath, clientNamespaceName),
+            GenerationLanguage.Ruby => new RubyWriter(filesystem, outputPath, clientNamespaceName),
+            GenerationLanguage.PHP => new PhpWriter(filesystem, outputPath, clientNamespaceName, usesBackingStore),
+            GenerationLanguage.Python => new PythonWriter(filesystem, outputPath, clientNamespaceName, usesBackingStore),
+            GenerationLanguage.Go => new GoWriter(filesystem, outputPath, clientNamespaceName, excludeBackwardCompatible),
+            GenerationLanguage.CLI => new CliWriter(filesystem, outputPath, clientNamespaceName),
+            GenerationLanguage.Swift => new SwiftWriter(filesystem, outputPath, clientNamespaceName),
+            GenerationLanguage.Dart => new DartWriter(filesystem, outputPath, clientNamespaceName),
+            GenerationLanguage.HTTP => new HttpWriter(filesystem, outputPath, clientNamespaceName),
             _ => throw new InvalidEnumArgumentException($"{language} language currently not supported."),
         };
     }

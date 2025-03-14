@@ -1,10 +1,11 @@
 ﻿using Kiota.Builder.CodeDOM;
 using Kiota.Builder.Extensions;
+using Kiota.Builder.Filesystem;
 
 namespace Kiota.Builder.PathSegmenters;
 public class SwiftPathSegmenter : CommonPathSegmenter
 {
-    public SwiftPathSegmenter(string rootPath, string clientNamespaceName) : base(rootPath, clientNamespaceName) { }
+    public SwiftPathSegmenter(IFilesystem filesystem, string rootPath, string clientNamespaceName) : base(filesystem, rootPath, clientNamespaceName) { }
     public override string FileSuffix => ".swift";
     public override string NormalizeNamespaceSegment(string segmentName) => segmentName.ToFirstCharacterUpperCase();
     public override string NormalizeFileName(CodeElement currentElement)

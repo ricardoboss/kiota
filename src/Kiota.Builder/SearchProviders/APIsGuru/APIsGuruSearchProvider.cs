@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Kiota.Builder.Caching;
+using Kiota.Builder.Filesystem;
 using Microsoft.Extensions.Logging;
 
 namespace Kiota.Builder.SearchProviders.APIsGuru;
@@ -20,7 +21,7 @@ public class APIsGuruSearchProvider : ISearchProvider
         ArgumentNullException.ThrowIfNull(searchUri);
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(logger);
-        cachingProvider = new DocumentCachingProvider(httpClient, logger)
+        cachingProvider = new DocumentCachingProvider(httpClient, logger, new PhysicalFilesystem()) // TODO(ricardoboss): replace with IFilesystem
         {
             ClearCache = clearCache,
         };

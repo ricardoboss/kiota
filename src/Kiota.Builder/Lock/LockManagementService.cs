@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Kiota.Builder.Extensions;
+using Kiota.Builder.Filesystem;
 
 namespace Kiota.Builder.Lock;
 
@@ -18,25 +19,31 @@ public class LockManagementService : ILockManagementService
 {
     internal const string LockFileName = "kiota-lock.json";
     /// <inheritdoc/>
-    public IEnumerable<string> GetDirectoriesContainingLockFile(string searchDirectory)
+    public IEnumerable<string> GetDirectoriesContainingLockFile(string searchDirectory, IFilesystem filesystem)
     {
         ArgumentException.ThrowIfNullOrEmpty(searchDirectory);
-        var files = Directory.GetFiles(searchDirectory, LockFileName, SearchOption.AllDirectories);
-        return files.Select(Path.GetDirectoryName).Where(x => !string.IsNullOrEmpty(x)).OfType<string>();
+        ArgumentNullException.ThrowIfNull(filesystem);
+        return filesystem.EnumerateFiles(searchDirectory, recursive: true)
+            .Where(x => x.EndsWith(LockFileName, StringComparison.OrdinalIgnoreCase))
+            .Select(Path.GetDirectoryName)
+            .Where(x => !string.IsNullOrEmpty(x))
+            .OfType<string>();
     }
+
     /// <inheritdoc/>
-    public Task<KiotaLock?> GetLockFromDirectoryAsync(string directoryPath, CancellationToken cancellationToken = default)
+    public Task<KiotaLock?> GetLockFromDirectoryAsync(string directoryPath, IFilesystem filesystem, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(directoryPath);
-        return GetLockFromDirectoryInternalAsync(directoryPath, cancellationToken);
+        ArgumentNullException.ThrowIfNull(filesystem);
+        return GetLockFromDirectoryInternalAsync(directoryPath, filesystem, cancellationToken);
     }
-    private static async Task<KiotaLock?> GetLockFromDirectoryInternalAsync(string directoryPath, CancellationToken cancellationToken)
+    private static async Task<KiotaLock?> GetLockFromDirectoryInternalAsync(string directoryPath, IFilesystem filesystem, CancellationToken cancellationToken)
     {
         var lockFilePath = Path.Combine(directoryPath, LockFileName);
-        if (File.Exists(lockFilePath))
+        if (filesystem.FileExists(lockFilePath))
         {
 #pragma warning disable CA2007
-            await using var fileStream = File.OpenRead(lockFilePath);
+            await using var fileStream = filesystem.OpenRead(lockFilePath);
 #pragma warning restore CA2007
             var result = await GetLockFromStreamInternalAsync(fileStream, cancellationToken).ConfigureAwait(false);
             if (result is not null && IsDescriptionLocal(result.DescriptionLocation) && !Path.IsPathRooted(result.DescriptionLocation))
@@ -58,11 +65,12 @@ public class LockManagementService : ILockManagementService
         return await JsonSerializer.DeserializeAsync(stream, context.KiotaLock, cancellationToken).ConfigureAwait(false);
     }
     /// <inheritdoc/>
-    public Task WriteLockFileAsync(string directoryPath, KiotaLock lockInfo, CancellationToken cancellationToken = default)
+    public Task WriteLockFileAsync(string directoryPath, IFilesystem filesystem, KiotaLock lockInfo, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(directoryPath);
+        ArgumentNullException.ThrowIfNull(filesystem);
         ArgumentNullException.ThrowIfNull(lockInfo);
-        return WriteLockFileInternalAsync(directoryPath, lockInfo, cancellationToken);
+        return WriteLockFileInternalAsync(directoryPath, filesystem, lockInfo, cancellationToken);
     }
     private static readonly JsonSerializerOptions options = new()
     {
@@ -70,16 +78,18 @@ public class LockManagementService : ILockManagementService
         WriteIndented = true,
     };
     private static readonly KiotaLockGenerationContext context = new(options);
-    private static async Task WriteLockFileInternalAsync(string directoryPath, KiotaLock lockInfo, CancellationToken cancellationToken)
+    private static async Task WriteLockFileInternalAsync(string directoryPath, IFilesystem filesystem, KiotaLock lockInfo, CancellationToken cancellationToken)
     {
         var lockFilePath = Path.Combine(directoryPath, LockFileName);
 #pragma warning disable CA2007
-        await using var fileStream = File.Open(lockFilePath, FileMode.Create);
+        await using var fileStream = filesystem.OpenWrite(lockFilePath);
 #pragma warning restore CA2007
         lockInfo.DescriptionLocation = GetRelativeDescriptionPath(lockInfo.DescriptionLocation, lockFilePath);
         await JsonSerializer.SerializeAsync(fileStream, lockInfo, context.KiotaLock, cancellationToken).ConfigureAwait(false);
     }
+
     private static bool IsDescriptionLocal(string descriptionPath) => !descriptionPath.StartsWith("http", StringComparison.OrdinalIgnoreCase);
+
     private static string GetRelativeDescriptionPath(string descriptionPath, string lockFilePath)
     {
         if (IsDescriptionLocal(descriptionPath) &&
@@ -87,57 +97,65 @@ public class LockManagementService : ILockManagementService
             return Path.GetRelativePath(lockFileDirectoryPath, descriptionPath).NormalizePathSeparators();
         return descriptionPath;
     }
+
     /// <inheritdoc/>
-    public Task BackupLockFileAsync(string directoryPath, CancellationToken cancellationToken = default)
+    public Task BackupLockFileAsync(string directoryPath, IFilesystem filesystem, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(directoryPath);
-        return BackupLockFileInternalAsync(directoryPath);
+        ArgumentNullException.ThrowIfNull(filesystem);
+        return BackupLockFileInternalAsync(directoryPath, filesystem);
     }
-    private static Task BackupLockFileInternalAsync(string directoryPath)
+
+    private static Task BackupLockFileInternalAsync(string directoryPath, IFilesystem filesystem)
     {
         var lockFilePath = Path.Combine(directoryPath, LockFileName);
-        if (File.Exists(lockFilePath))
+        if (filesystem.FileExists(lockFilePath))
         {
-            var backupFilePath = GetBackupFilePath(directoryPath);
+            var backupFilePath = GetBackupFilePath(directoryPath, filesystem);
             var targetDirectory = Path.GetDirectoryName(backupFilePath);
             if (string.IsNullOrEmpty(targetDirectory)) return Task.CompletedTask;
-            if (!Directory.Exists(targetDirectory))
-                Directory.CreateDirectory(targetDirectory);
-            File.Copy(lockFilePath, backupFilePath, true);
+            if (!filesystem.DirectoryExists(targetDirectory))
+                filesystem.CreateDirectory(targetDirectory);
+            filesystem.CopyFile(lockFilePath, backupFilePath, true);
         }
         return Task.CompletedTask;
     }
     /// <inheritdoc/>
-    public Task RestoreLockFileAsync(string directoryPath, CancellationToken cancellationToken = default)
+    public Task RestoreLockFileAsync(string directoryPath, IFilesystem filesystem, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(directoryPath);
-        return RestoreLockFileInternalAsync(directoryPath);
+        ArgumentNullException.ThrowIfNull(filesystem);
+        return RestoreLockFileInternalAsync(directoryPath, filesystem);
     }
-    private static Task RestoreLockFileInternalAsync(string directoryPath)
+    private static Task RestoreLockFileInternalAsync(string directoryPath, IFilesystem filesystem)
     {
         var lockFilePath = Path.Combine(directoryPath, LockFileName);
         var targetDirectory = Path.GetDirectoryName(lockFilePath);
         if (string.IsNullOrEmpty(targetDirectory)) return Task.CompletedTask;
-        if (!Directory.Exists(targetDirectory))
-            Directory.CreateDirectory(targetDirectory);
-        var backupFilePath = GetBackupFilePath(directoryPath);
-        if (File.Exists(backupFilePath))
+        if (!filesystem.DirectoryExists(targetDirectory))
+            filesystem.CreateDirectory(targetDirectory);
+        var backupFilePath = GetBackupFilePath(directoryPath, filesystem);
+        if (filesystem.FileExists(backupFilePath))
         {
-            File.Copy(backupFilePath, lockFilePath, true);
+            filesystem.CopyFile(backupFilePath, lockFilePath, true);
         }
         return Task.CompletedTask;
     }
+
     private static readonly ThreadLocal<HashAlgorithm> HashAlgorithm = new(SHA256.Create);
-    private static string GetBackupFilePath(string outputPath)
+    private static string GetBackupFilePath(string outputPath, IFilesystem filesystem)
     {
+        ArgumentNullException.ThrowIfNull(filesystem);
         var hashedPath = Convert.ToHexString((HashAlgorithm.Value ?? throw new InvalidOperationException("unable to get hash algorithm")).ComputeHash(Encoding.UTF8.GetBytes(outputPath))).Replace("-", string.Empty, StringComparison.OrdinalIgnoreCase);
-        return Path.Combine(Path.GetTempPath(), Constants.TempDirectoryName, "backup", hashedPath, LockFileName);
+        return Path.Combine(filesystem.GetTempPath(), Constants.TempDirectoryName, "backup", hashedPath, LockFileName);
     }
-    public void DeleteLockFile(string directoryPath)
+
+    public void DeleteLockFile(string directoryPath, IFilesystem filesystem)
     {
         ArgumentException.ThrowIfNullOrEmpty(directoryPath);
+        ArgumentNullException.ThrowIfNull(filesystem);
         var lockFilePath = Path.Combine(directoryPath, LockFileName);
-        if (File.Exists(lockFilePath))
-            File.Delete(lockFilePath);
+        if (filesystem.FileExists(lockFilePath))
+            filesystem.DeleteFile(lockFilePath);
     }
 }

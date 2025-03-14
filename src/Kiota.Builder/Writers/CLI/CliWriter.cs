@@ -1,9 +1,10 @@
-﻿using Kiota.Builder.Writers.CSharp;
+﻿using Kiota.Builder.Filesystem;
+using Kiota.Builder.Writers.CSharp;
 
 namespace Kiota.Builder.Writers.Cli;
 class CliWriter : CSharpWriter
 {
-    public CliWriter(string rootPath, string clientNamespaceName) : base(rootPath, clientNamespaceName)
+    public CliWriter(IFilesystem filesystem, string rootPath, string clientNamespaceName) : base(filesystem, rootPath, clientNamespaceName)
     {
         var conventionService = new CSharpConventionService();
         AddOrReplaceCodeElementWriter(new CodeClassDeclarationWriter(conventionService));

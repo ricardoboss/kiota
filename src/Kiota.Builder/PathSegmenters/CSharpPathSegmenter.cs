@@ -2,11 +2,12 @@
 using System.IO;
 using Kiota.Builder.CodeDOM;
 using Kiota.Builder.Extensions;
+using Kiota.Builder.Filesystem;
 
 namespace Kiota.Builder.PathSegmenters;
 public class CSharpPathSegmenter : CommonPathSegmenter
 {
-    public CSharpPathSegmenter(string rootPath, string clientNamespaceName) : base(rootPath, clientNamespaceName) { }
+    public CSharpPathSegmenter(IFilesystem filesystem, string rootPath, string clientNamespaceName) : base(filesystem, rootPath, clientNamespaceName) { }
     public override string FileSuffix => ".cs";
     public override string NormalizeNamespaceSegment(string segmentName) => segmentName.ToFirstCharacterUpperCase().ShortenFileName();
     public override string NormalizeFileName(CodeElement currentElement) => GetLastFileNameSegment(currentElement).ToFirstCharacterUpperCase().ShortenFileName();

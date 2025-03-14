@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
+using Kiota.Builder.Filesystem;
 using Microsoft.Extensions.Logging;
 
 namespace Kiota.Builder.Logging;
@@ -12,8 +13,12 @@ public class FileLogLogger : ILogger, IDisposable
     private readonly string _categoryName;
     internal const string LogFileName = ".kiota.log";
     private readonly object writeLock = new();
-    public FileLogLogger(string logFileDirectoryAbsolutePath, LogLevel logLevel, string categoryName)
+    private readonly IFilesystem _filesystem;
+    public FileLogLogger(string logFileDirectoryAbsolutePath, IFilesystem filesystem, LogLevel logLevel, string categoryName)
     {
+        ArgumentNullException.ThrowIfNull(filesystem);
+
+        _filesystem = filesystem;
         _logLevel = logLevel;
         _categoryName = categoryName?.Split(categoryNameSeparators, StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? string.Empty;
         if (_logLevel == LogLevel.None || string.IsNullOrEmpty(logFileDirectoryAbsolutePath))
@@ -21,11 +26,11 @@ public class FileLogLogger : ILogger, IDisposable
         else
         {
             var logFileAbsolutePath = Path.Combine(logFileDirectoryAbsolutePath, LogFileName);
-            if (File.Exists(logFileAbsolutePath))
-                File.Delete(logFileAbsolutePath);
-            if (!Directory.Exists(logFileDirectoryAbsolutePath))
-                Directory.CreateDirectory(logFileDirectoryAbsolutePath);
-            _logStream = new StreamWriter(logFileAbsolutePath);
+            if (filesystem.FileExists(logFileAbsolutePath))
+                filesystem.DeleteFile(logFileAbsolutePath);
+            if (!filesystem.DirectoryExists(logFileDirectoryAbsolutePath))
+                filesystem.CreateDirectory(logFileDirectoryAbsolutePath);
+            _logStream = new StreamWriter(filesystem.OpenWrite(logFileAbsolutePath));
             _logFileAbsolutePath = logFileAbsolutePath;
         }
     }
@@ -46,8 +51,8 @@ public class FileLogLogger : ILogger, IDisposable
         _logStream.Dispose();
         lock (writeLock)
         {
-            if (!wroteAnything && !string.IsNullOrEmpty(_logFileAbsolutePath) && File.Exists(_logFileAbsolutePath))
-                File.Delete(_logFileAbsolutePath);
+            if (!wroteAnything && !string.IsNullOrEmpty(_logFileAbsolutePath) && _filesystem.FileExists(_logFileAbsolutePath))
+                _filesystem.DeleteFile(_logFileAbsolutePath);
         }
     }
     public bool IsEnabled(LogLevel logLevel)
@@ -71,6 +76,6 @@ public class FileLogLogger : ILogger, IDisposable
     }
 }
 
-public class FileLogLogger<T>(string logFileDirectoryAbsolutePath, LogLevel logLevel) : FileLogLogger(logFileDirectoryAbsolutePath, logLevel, typeof(T).FullName ?? string.Empty), ILogger<T>
+public class FileLogLogger<T>(string logFileDirectoryAbsolutePath, IFilesystem filesystem, LogLevel logLevel) : FileLogLogger(logFileDirectoryAbsolutePath, filesystem, logLevel, typeof(T).FullName ?? string.Empty), ILogger<T>
 {
 }

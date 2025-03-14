@@ -1,10 +1,11 @@
 ﻿using Kiota.Builder.CodeDOM;
 using Kiota.Builder.Extensions;
+using Kiota.Builder.Filesystem;
 
 namespace Kiota.Builder.PathSegmenters;
 public class PythonPathSegmenter : CommonPathSegmenter
 {
-    public PythonPathSegmenter(string rootPath, string clientNamespaceName) : base(rootPath, clientNamespaceName) { }
+    public PythonPathSegmenter(IFilesystem filesystem, string rootPath, string clientNamespaceName) : base(filesystem, rootPath, clientNamespaceName) { }
     public override string FileSuffix => ".py";
     public override string NormalizeFileName(CodeElement currentElement)
     {

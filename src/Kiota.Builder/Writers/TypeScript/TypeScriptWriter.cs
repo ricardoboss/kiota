@@ -1,12 +1,13 @@
-﻿using Kiota.Builder.PathSegmenters;
+﻿using Kiota.Builder.Filesystem;
+using Kiota.Builder.PathSegmenters;
 
 namespace Kiota.Builder.Writers.TypeScript;
 
 public class TypeScriptWriter : LanguageWriter
 {
-    public TypeScriptWriter(string rootPath, string clientNamespaceName)
+    public TypeScriptWriter(IFilesystem filesystem, string rootPath, string clientNamespaceName)
     {
-        PathSegmenter = new TypeScriptPathSegmenter(rootPath, clientNamespaceName);
+        PathSegmenter = new TypeScriptPathSegmenter(filesystem, rootPath, clientNamespaceName);
         var conventionService = new TypeScriptConventionService();
         AddOrReplaceCodeElementWriter(new CodeClassDeclarationWriter(conventionService, clientNamespaceName));
         AddOrReplaceCodeElementWriter(new CodeBlockEndWriter(conventionService));

@@ -10,6 +10,7 @@ using AsyncKeyedLock;
 using Kiota.Builder.Caching;
 using Kiota.Builder.Configuration;
 using Kiota.Builder.Extensions;
+using Kiota.Builder.Filesystem;
 using Kiota.Builder.OpenApiExtensions;
 using Kiota.Builder.SearchProviders.APIsGuru;
 using Kiota.Builder.Validation;
@@ -25,12 +26,14 @@ internal class OpenApiDocumentDownloadService
 {
     private readonly ILogger Logger;
     private readonly HttpClient HttpClient;
-    public OpenApiDocumentDownloadService(HttpClient httpClient, ILogger logger)
+    private readonly IFilesystem Filesystem;
+    public OpenApiDocumentDownloadService(HttpClient httpClient, ILogger logger, IFilesystem filesystem)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(logger);
         HttpClient = httpClient;
         Logger = logger;
+        Filesystem = filesystem;
     }
     private static readonly AsyncKeyedLocker<string> localFilesLock = new(o =>
     {
@@ -58,7 +61,7 @@ internal class OpenApiDocumentDownloadService
         else if (inputPath.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             try
             {
-                var cachingProvider = new DocumentCachingProvider(HttpClient, Logger)
+                var cachingProvider = new DocumentCachingProvider(HttpClient, Logger, Filesystem)
                 {
                     ClearCache = config.ClearCache,
                 };

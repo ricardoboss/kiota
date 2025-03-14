@@ -67,28 +67,37 @@ public partial class KiotaBuilder
         {
             MaxDegreeOfParallelism = config.MaxDegreeOfParallelism,
         };
-        var workingDirectory = Directory.GetCurrentDirectory();
+        var workingDirectory = config.Filesystem.GetCurrentDirectory();
         workspaceManagementService = new WorkspaceManagementService(logger, client, useKiotaConfig, workingDirectory);
         this.useKiotaConfig = useKiotaConfig;
-        openApiDocumentDownloadService = new OpenApiDocumentDownloadService(client, logger);
+        openApiDocumentDownloadService = new OpenApiDocumentDownloadService(client, logger, config.Filesystem);
         settingsFileManagementService = settingsManagementService ?? new SettingsFileManagementService();
     }
     private readonly OpenApiDocumentDownloadService openApiDocumentDownloadService;
     private readonly bool useKiotaConfig;
+
     private async Task CleanOutputDirectoryAsync(CancellationToken cancellationToken)
     {
-        if (config.CleanOutput && Directory.Exists(config.OutputPath))
-        {
-            logger.LogInformation("Cleaning output directory {Path}", config.OutputPath);
-            // not using Directory.Delete on the main directory because it's locked when mapped in a container
-            foreach (var subDir in Directory.EnumerateDirectories(config.OutputPath))
-                Directory.Delete(subDir, true);
-            await workspaceManagementService.BackupStateAsync(config.OutputPath, cancellationToken).ConfigureAwait(false);
-            foreach (var subFile in Directory.EnumerateFiles(config.OutputPath)
-                                            .Where(static x => !x.EndsWith(FileLogLogger.LogFileName, StringComparison.OrdinalIgnoreCase)))
-                File.Delete(subFile);
-        }
+        if (!config.CleanOutput)
+            return;
+
+        if (!config.Filesystem.DirectoryExists(config.OutputPath))
+            return;
+
+        logger.LogInformation("Cleaning output directory {Path}", config.OutputPath);
+
+        // not using Directory.Delete on the main directory because it's locked when mapped in a container
+        foreach (var subDir in config.Filesystem.EnumerateDirectories(config.OutputPath))
+            config.Filesystem.DeleteDirectory(subDir, recursive: true);
+
+        await workspaceManagementService.BackupStateAsync(config.OutputPath, config.Filesystem, cancellationToken).ConfigureAwait(false);
+
+        foreach (var subFile in config.Filesystem.EnumerateFiles(config.OutputPath)
+                           // TODO(ricardoboss): Make logger filesystem agnostic
+                           .Where(static x => !x.EndsWith(FileLogLogger.LogFileName, StringComparison.OrdinalIgnoreCase)))
+            config.Filesystem.DeleteFile(subFile);
     }
+
     public async Task<OpenApiUrlTreeNode?> GetUrlTreeNodeAsync(CancellationToken cancellationToken)
     {
         var sw = new Stopwatch();
@@ -115,11 +124,11 @@ public partial class KiotaBuilder
             var manifestPath = pathParts[0];
             var apiIdentifier = pathParts.Length > 1 ? pathParts[1] : string.Empty;
             var manifestManagementService = new ManifestManagementService();
-            var documentCachingProvider = new DocumentCachingProvider(httpClient, logger);
+            var documentCachingProvider = new DocumentCachingProvider(httpClient, logger, config.Filesystem);
 #pragma warning disable CA2000
             using var manifestFileContent = manifestPath.StartsWith("http", StringComparison.OrdinalIgnoreCase) switch
             {
-                false => File.OpenRead(manifestPath),
+                false => config.Filesystem.OpenRead(manifestPath),
                 true => await documentCachingProvider.GetDocumentAsync(new Uri(manifestPath), "manifests", "manifest.json", cancellationToken: cancellationToken).ConfigureAwait(false)
             };
 #pragma warning restore CA2000
@@ -252,7 +261,7 @@ public partial class KiotaBuilder
                 throw new InvalidOperationException("The OpenAPI document and the URL tree must be loaded before generating the plugins");
             // generate plugin
             sw.Start();
-            var pluginsService = new PluginsGenerationService(openApiDocument, openApiTree, config, Directory.GetCurrentDirectory(), logger);
+            var pluginsService = new PluginsGenerationService(openApiDocument, openApiTree, config, config.Filesystem.GetCurrentDirectory(), logger);
             await pluginsService.GenerateManifestAsync(cancellationToken).ConfigureAwait(false);
             StopLogAndReset(sw, $"step {++stepId} - generate plugin - took");
             return stepId;
@@ -282,7 +291,7 @@ public partial class KiotaBuilder
             {
                 // Generate public API export
                 sw.Start();
-                var fileStream = File.Create(Path.Combine(config.OutputPath, PublicApiExportService.DomExportFileName));
+                var fileStream = config.Filesystem.OpenWrite(Path.Combine(config.OutputPath, PublicApiExportService.DomExportFileName));
                 await using (fileStream.ConfigureAwait(false))
                 {
                     await new PublicApiExportService(config).SerializeDomAsync(fileStream, generatedCode, cancellationToken).ConfigureAwait(false);
@@ -316,13 +325,15 @@ public partial class KiotaBuilder
         try
         {
             await CleanOutputDirectoryAsync(cancellationToken).ConfigureAwait(false);
+
             // doing this verification at the beginning to give immediate feedback to the user
-            Directory.CreateDirectory(config.OutputPath);
+            config.Filesystem.CreateDirectory(config.OutputPath);
         }
         catch (Exception ex)
         {
             throw new InvalidOperationException($"Could not open/create output directory {config.OutputPath}, reason: {ex.Message}", ex);
         }
+
         try
         {
             var (stepId, openApiTree, shouldGenerate) = await GetTreeNodeInternalAsync(inputPath, true, sw, cancellationToken).ConfigureAwait(false);
@@ -345,9 +356,11 @@ public partial class KiotaBuilder
         }
         catch
         {
-            await workspaceManagementService.RestoreStateAsync(config.OutputPath, cancellationToken).ConfigureAwait(false);
+            await workspaceManagementService.RestoreStateAsync(config.OutputPath, config.Filesystem, cancellationToken).ConfigureAwait(false);
+
             throw;
         }
+
         return true;
     }
     private async Task FinalizeWorkspaceAsync(Stopwatch sw, int stepId, OpenApiUrlTreeNode? openApiTree, string inputPath, CancellationToken cancellationToken)
@@ -636,7 +649,7 @@ public partial class KiotaBuilder
 
     public async Task CreateLanguageSourceFilesAsync(GenerationLanguage language, CodeNamespace generatedCode, CancellationToken cancellationToken)
     {
-        var languageWriter = LanguageWriter.GetLanguageWriter(language, config.OutputPath, config.ClientNamespaceName, config.UsesBackingStore, config.ExcludeBackwardCompatible);
+        var languageWriter = LanguageWriter.GetLanguageWriter(language, config.Filesystem, config.OutputPath, config.ClientNamespaceName, config.UsesBackingStore, config.ExcludeBackwardCompatible);
         var stopwatch = new Stopwatch();
         stopwatch.Start();
         var codeRenderer = CodeRenderer.GetCodeRender(config);

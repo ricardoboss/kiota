@@ -1,11 +1,12 @@
-﻿using Kiota.Builder.PathSegmenters;
+﻿using Kiota.Builder.Filesystem;
+using Kiota.Builder.PathSegmenters;
 
 namespace Kiota.Builder.Writers.Python;
 public class PythonWriter : LanguageWriter
 {
-    public PythonWriter(string rootPath, string clientNamespaceName, bool usesBackingStore = false)
+    public PythonWriter(IFilesystem filesystem, string rootPath, string clientNamespaceName, bool usesBackingStore = false)
     {
-        PathSegmenter = new PythonPathSegmenter(rootPath, clientNamespaceName);
+        PathSegmenter = new PythonPathSegmenter(filesystem, rootPath, clientNamespaceName);
         var conventionService = new PythonConventionService();
         AddOrReplaceCodeElementWriter(new CodeClassDeclarationWriter(conventionService, clientNamespaceName));
         AddOrReplaceCodeElementWriter(new CodeBlockEndWriter());

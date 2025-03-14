@@ -4,11 +4,12 @@ using System.IO;
 using System.Linq;
 using Kiota.Builder.CodeDOM;
 using Kiota.Builder.Extensions;
+using Kiota.Builder.Filesystem;
 
 namespace Kiota.Builder.PathSegmenters;
 public class RubyPathSegmenter : CommonPathSegmenter
 {
-    public RubyPathSegmenter(string rootPath, string clientNamespaceName) : base(rootPath, clientNamespaceName) { }
+    public RubyPathSegmenter(IFilesystem filesystem, string rootPath, string clientNamespaceName) : base(filesystem, rootPath, clientNamespaceName) { }
     public override IEnumerable<string> GetAdditionalSegment(CodeElement currentElement, string fileName)
     {
         return currentElement switch

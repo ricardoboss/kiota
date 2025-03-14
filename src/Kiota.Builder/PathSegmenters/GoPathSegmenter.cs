@@ -4,9 +4,10 @@ using System.Linq;
 
 using Kiota.Builder.CodeDOM;
 using Kiota.Builder.Extensions;
+using Kiota.Builder.Filesystem;
 
 namespace Kiota.Builder.PathSegmenters;
-public class GoPathSegmenter(string rootPath, string clientNamespaceName) : CommonPathSegmenter(rootPath, clientNamespaceName)
+public class GoPathSegmenter(IFilesystem filesystem, string rootPath, string clientNamespaceName) : CommonPathSegmenter(filesystem, rootPath, clientNamespaceName)
 {
     private static readonly HashSet<string> specialFileNameSuffixes = new(StringComparer.OrdinalIgnoreCase) {
         "test"       ,

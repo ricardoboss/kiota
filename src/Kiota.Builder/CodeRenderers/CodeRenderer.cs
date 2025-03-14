@@ -27,7 +27,7 @@ public class CodeRenderer
         ArgumentNullException.ThrowIfNull(codeElement);
         ArgumentException.ThrowIfNullOrEmpty(outputFile);
 #pragma warning disable CA2007
-        await using var stream = new FileStream(outputFile, FileMode.Create);
+        await using var stream = Configuration.Filesystem.OpenWrite(outputFile);
 #pragma warning restore CA2007
 
         var sw = new StreamWriter(stream);

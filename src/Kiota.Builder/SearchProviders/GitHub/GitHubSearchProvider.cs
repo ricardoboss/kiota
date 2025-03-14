@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Kiota.Builder.Caching;
 using Kiota.Builder.Configuration;
 using Kiota.Builder.Extensions;
+using Kiota.Builder.Filesystem;
 using Kiota.Builder.SearchProviders.GitHub.GitHubClient.Models;
 using Kiota.Builder.SearchProviders.GitHub.Index;
 using Microsoft.Extensions.Logging;
@@ -33,7 +34,7 @@ public class GitHubSearchProvider : ISearchProvider
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(configuration.BlockListUrl);
         ArgumentNullException.ThrowIfNull(logger);
-        documentCachingProvider = new DocumentCachingProvider(httpClient, logger)
+        documentCachingProvider = new DocumentCachingProvider(httpClient, logger, new PhysicalFilesystem()) // TODO(ricardoboss): replace with IFilesystem
         {
             ClearCache = clearCache,
         };

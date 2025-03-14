@@ -4,14 +4,18 @@ using System.IO;
 using System.Linq;
 
 using Kiota.Builder.CodeDOM;
+using Kiota.Builder.Filesystem;
 
 namespace Kiota.Builder.PathSegmenters;
 public abstract class CommonPathSegmenter : IPathSegmenter
 {
-    protected CommonPathSegmenter(string rootPath, string clientNamespaceName)
+    private readonly IFilesystem _filesystem;
+
+    protected CommonPathSegmenter(IFilesystem filesystem, string rootPath, string clientNamespaceName)
     {
         ArgumentException.ThrowIfNullOrEmpty(rootPath);
         ArgumentException.ThrowIfNullOrEmpty(clientNamespaceName);
+        _filesystem = filesystem;
         ClientNamespaceName = clientNamespaceName;
         RootPath = rootPath.Contains(Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ? rootPath : rootPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
     }
@@ -51,7 +55,7 @@ public abstract class CommonPathSegmenter : IPathSegmenter
             targetPath = NormalizePath(targetPath);
         var directoryPath = Path.GetDirectoryName(targetPath);
         if (!string.IsNullOrEmpty(directoryPath))
-            Directory.CreateDirectory(directoryPath);
+            _filesystem.CreateDirectory(directoryPath);
         return targetPath;
     }
 }

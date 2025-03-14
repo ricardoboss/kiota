@@ -1,11 +1,12 @@
-﻿using Kiota.Builder.PathSegmenters;
+﻿using Kiota.Builder.Filesystem;
+using Kiota.Builder.PathSegmenters;
 
 namespace Kiota.Builder.Writers.Dart;
 public class DartWriter : LanguageWriter
 {
-    public DartWriter(string rootPath, string clientNamespaceName)
+    public DartWriter(IFilesystem filesystem, string rootPath, string clientNamespaceName)
     {
-        PathSegmenter = new DartPathSegmenter(rootPath, clientNamespaceName);
+        PathSegmenter = new DartPathSegmenter(filesystem, rootPath, clientNamespaceName);
         var conventionService = new DartConventionService();
         AddOrReplaceCodeElementWriter(new CodeClassDeclarationWriter(conventionService, clientNamespaceName, (DartPathSegmenter)PathSegmenter));
         AddOrReplaceCodeElementWriter(new CodeBlockEndWriter());

@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Kiota.Builder.Configuration;
+using Kiota.Builder.Filesystem;
 using Kiota.Builder.SearchProviders.GitHub.Authentication;
 using Kiota.Builder.SearchProviders.GitHub.GitHubClient;
 using Microsoft.Extensions.Logging;
@@ -17,16 +18,19 @@ public class UpdateService
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger _logger;
+    private readonly IFilesystem _filesystem;
     private readonly UpdateConfiguration _updateConfiguration;
     private readonly VersionComparer _versionComparer = new();
+    // TODO(ricardoboss): replace Path.GetTempPath()
     private static readonly string _lastVerificationFilePath = Path.Combine(Path.GetTempPath(), Constants.TempDirectoryName, "update", "timestamp.txt");
-    public UpdateService(HttpClient httpClient, ILogger logger, UpdateConfiguration updateConfiguration)
+    public UpdateService(HttpClient httpClient, ILogger logger, IFilesystem filesystem, UpdateConfiguration updateConfiguration)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(updateConfiguration);
         _httpClient = httpClient;
         _logger = logger;
+        _filesystem = filesystem;
         _updateConfiguration = updateConfiguration;
     }
     public async Task<string> GetUpdateMessageAsync(string currentVersion, CancellationToken cancellationToken)
@@ -35,7 +39,7 @@ public class UpdateService
             return string.Empty;
         try
         {
-            var lastVerificationDate = await GetLastVerificationDateAsync(cancellationToken).ConfigureAwait(false);
+            var lastVerificationDate = await GetLastVerificationDateAsync(_filesystem, cancellationToken).ConfigureAwait(false);
             if (!ShouldCheckForUpdates(lastVerificationDate)) return string.Empty;
             using var requestAdapter = new HttpClientRequestAdapter(new AnonymousAuthenticationProvider(), httpClient: _httpClient);
             var gitHubClient = new GitHubClient(requestAdapter);
@@ -49,7 +53,7 @@ public class UpdateService
             if (latestVersion is null) return string.Empty;
             var currentVersionParsed = GetVersionFromLabel(currentVersion);
             if (currentVersionParsed is null) return string.Empty;
-            await SetLastVerificationDateAsync(DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
+            await SetLastVerificationDateAsync(DateTimeOffset.UtcNow, _filesystem, cancellationToken).ConfigureAwait(false);
             if (_versionComparer.Compare(currentVersionParsed, latestVersion) < 0)
                 return $"A newer version of Kiota ({latestVersion}) is available. You are currently using version {currentVersion}. https://aka.ms/get/kiota";
         }
@@ -61,29 +65,29 @@ public class UpdateService
         }
         return string.Empty;
     }
-    private static async Task<DateTimeOffset> GetLastVerificationDateAsync(CancellationToken cancellationToken)
+    private static async Task<DateTimeOffset> GetLastVerificationDateAsync(IFilesystem filesystem, CancellationToken cancellationToken)
     {
-        if (File.Exists(_lastVerificationFilePath))
+        if (filesystem.FileExists(_lastVerificationFilePath))
         {
-            var lastVerificationDate = await File.ReadAllTextAsync(_lastVerificationFilePath, cancellationToken).ConfigureAwait(false);
+            var lastVerificationDate = await filesystem.ReadAllTextAsync(_lastVerificationFilePath, cancellationToken).ConfigureAwait(false);
             if (DateTimeOffset.TryParse(lastVerificationDate, out var parsedDate))
                 return parsedDate;
         }
-        return DateTimeOffset.MinValue;
 
+        return DateTimeOffset.MinValue;
     }
-    private static async Task SetLastVerificationDateAsync(DateTimeOffset date, CancellationToken cancellationToken)
+    private static async Task SetLastVerificationDateAsync(DateTimeOffset date, IFilesystem filesystem, CancellationToken cancellationToken)
     {
-        ClearVerificationDate();
+        ClearVerificationDate(filesystem);
         var directoryPath = Path.GetDirectoryName(_lastVerificationFilePath);
-        if (!string.IsNullOrEmpty(directoryPath) && !Directory.Exists(directoryPath))
-            Directory.CreateDirectory(directoryPath);
-        await File.WriteAllTextAsync(_lastVerificationFilePath, date.ToString("o"), cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrEmpty(directoryPath) && !filesystem.DirectoryExists(directoryPath))
+            filesystem.CreateDirectory(directoryPath);
+        await filesystem.WriteAllTextAsync(_lastVerificationFilePath, date.ToString("o"), cancellationToken).ConfigureAwait(false);
     }
-    internal static void ClearVerificationDate()
+    internal static void ClearVerificationDate(IFilesystem filesystem)
     {
-        if (File.Exists(_lastVerificationFilePath))
-            File.Delete(_lastVerificationFilePath);
+        if (filesystem.FileExists(_lastVerificationFilePath))
+            filesystem.DeleteFile(_lastVerificationFilePath);
     }
     private static bool ShouldCheckForUpdates(DateTimeOffset lastVerificationDate)
     {

@@ -1,11 +1,12 @@
-﻿using Kiota.Builder.PathSegmenters;
+﻿using Kiota.Builder.Filesystem;
+using Kiota.Builder.PathSegmenters;
 
 namespace Kiota.Builder.Writers.Go;
 public class GoWriter : LanguageWriter
 {
-    public GoWriter(string rootPath, string clientNamespaceName, bool excludeBackwardCompatible = false)
+    public GoWriter(IFilesystem filesystem, string rootPath, string clientNamespaceName, bool excludeBackwardCompatible = false)
     {
-        PathSegmenter = new GoPathSegmenter(rootPath, clientNamespaceName);
+        PathSegmenter = new GoPathSegmenter(filesystem, rootPath, clientNamespaceName);
         var conventionService = new GoConventionService();
         AddOrReplaceCodeElementWriter(new CodeClassDeclarationWriter(conventionService));
         AddOrReplaceCodeElementWriter(new CodeInterfaceDeclarationWriter(conventionService));

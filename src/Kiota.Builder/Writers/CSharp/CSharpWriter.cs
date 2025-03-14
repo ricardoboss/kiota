@@ -1,11 +1,12 @@
-﻿using Kiota.Builder.PathSegmenters;
+﻿using Kiota.Builder.Filesystem;
+using Kiota.Builder.PathSegmenters;
 
 namespace Kiota.Builder.Writers.CSharp;
 public class CSharpWriter : LanguageWriter
 {
-    public CSharpWriter(string rootPath, string clientNamespaceName)
+    public CSharpWriter(IFilesystem filesystem, string rootPath, string clientNamespaceName)
     {
-        PathSegmenter = new CSharpPathSegmenter(rootPath, clientNamespaceName);
+        PathSegmenter = new CSharpPathSegmenter(filesystem, rootPath, clientNamespaceName);
         var conventionService = new CSharpConventionService();
         AddOrReplaceCodeElementWriter(new CodeClassDeclarationWriter(conventionService));
         AddOrReplaceCodeElementWriter(new CodeBlockEndWriter(conventionService));

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using Kiota.Builder.CodeDOM;
 using Kiota.Builder.Extensions;
+using Kiota.Builder.Filesystem;
 using Kiota.Builder.Lock;
 using Microsoft.OpenApi.ApiManifest;
 
@@ -24,7 +25,7 @@ public class GenerationConfiguration : ICloneable
         {
             return (string.IsNullOrEmpty(OpenAPIFilePath) || OpenAPIFilePath.Equals(DefaultConfiguration.OpenAPIFilePath, StringComparison.OrdinalIgnoreCase)) &&
                 (!string.IsNullOrEmpty(ApiManifestPath) || !ApiManifestPath.Equals(DefaultConfiguration.ApiManifestPath, StringComparison.OrdinalIgnoreCase)) &&
-                (ApiManifestPath.StartsWith("http", StringComparison.OrdinalIgnoreCase) || File.Exists(ApiManifestPath));
+                (ApiManifestPath.StartsWith("http", StringComparison.OrdinalIgnoreCase) || Filesystem.FileExists(ApiManifestPath));
         }
     }
     public bool SkipGeneration
@@ -35,6 +36,8 @@ public class GenerationConfiguration : ICloneable
     {
         get; set;
     }
+
+    public IFilesystem Filesystem { get; set; } = new PhysicalFilesystem();
     public string OpenAPIFilePath { get; set; } = "openapi.yaml";
     public string ApiManifestPath { get; set; } = "apimanifest.json";
     public string OutputPath { get; set; } = "./output";

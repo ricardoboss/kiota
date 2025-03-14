@@ -1,11 +1,12 @@
-﻿using Kiota.Builder.PathSegmenters;
+﻿using Kiota.Builder.Filesystem;
+using Kiota.Builder.PathSegmenters;
 
 namespace Kiota.Builder.Writers.Php;
 public class PhpWriter : LanguageWriter
 {
-    public PhpWriter(string rootPath, string clientNamespaceName, bool useBackingStore = false)
+    public PhpWriter(IFilesystem filesystem, string rootPath, string clientNamespaceName, bool useBackingStore = false)
     {
-        PathSegmenter = new PhpPathSegmenter(rootPath, clientNamespaceName);
+        PathSegmenter = new PhpPathSegmenter(filesystem, rootPath, clientNamespaceName);
         var conventionService = new PhpConventionService();
         AddOrReplaceCodeElementWriter(new CodeClassDeclarationWriter(conventionService));
         AddOrReplaceCodeElementWriter(new CodePropertyWriter(conventionService));

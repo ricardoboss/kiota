@@ -1,0 +1,97 @@
+﻿@page "/"
+@using System.Diagnostics
+@using System.IO.Compression
+@using Kiota.Builder
+@using Kiota.Builder.Configuration
+@inject ILoggerFactory loggerFactory;
+@inject HttpClient client;
+@inject IJSRuntime JS;
+
+<InputText @bind-Value="SpecUrl" DisplayName="Spec URL"></InputText>
+<button @onclick="Generate">Generate</button>
+
+<pre>@FilesystemLog</pre>
+
+<script>
+    window.downloadFileFromStream = async (fileName, contentStreamReference) => {
+        const arrayBuffer = await contentStreamReference.arrayBuffer();
+        console.log("buffer size: ", arrayBuffer.byteLength);
+        const blob = new Blob([arrayBuffer]);
+        const url = URL.createObjectURL(blob);
+        const anchorElement = document.createElement('a');
+        anchorElement.href = url;
+        anchorElement.download = fileName ?? '';
+        anchorElement.click();
+        anchorElement.remove();
+        URL.revokeObjectURL(url);
+    }
+</script>
+
+@code{
+
+    private string SpecUrl { get; set; }
+
+    private string FilesystemLog { get; set; } = string.Empty;
+
+    async Task Generate()
+    {
+        var sw = new Stopwatch();
+        sw.Start();
+        FilesystemLog = $"{sw.Elapsed} Generating...\n";
+
+        var filesystem = new InMemoryFilesystem();
+        filesystem.NodeCreated += (_, e) => FilesystemLog += $"{sw.Elapsed} +{(e.IsDirectory ? "d" : "f")} {e.Path}/{e.Name}\n";
+        filesystem.NodeDeleted += (_, e) => FilesystemLog += $"{sw.Elapsed} -{(e.IsDirectory ? "d" : "f")} {e.Path}/{e.Name}\n";
+
+        var config = new GenerationConfiguration
+        {
+            Filesystem = filesystem,
+            OpenAPIFilePath = SpecUrl,
+        };
+
+        var logger = loggerFactory.CreateLogger<KiotaBuilder>();
+        var builder = new KiotaBuilder(logger, config, client);
+        await builder.GenerateClientAsync(CancellationToken.None);
+
+        FilesystemLog += $"\n{sw.Elapsed} Generation complete. Zipping...\n";
+
+        await using var zipStream = CreateZipArchive(filesystem);
+
+        FilesystemLog += $"\n{sw.Elapsed} Zipping complete. Downloading...\n";
+
+        await DownloadFileFromStream(zipStream);
+
+        FilesystemLog += $"\n{sw.Elapsed} Download complete.\n";
+    }
+
+    private static Stream CreateZipArchive(InMemoryFilesystem filesystem)
+    {
+        var zipStream = new MemoryStream();
+
+        using (var zipArchive = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var path in filesystem.EnumerateFiles("~", recursive: true))
+            {
+                var entry = zipArchive.CreateEntry(path[2..]); // cut off the leading "~/"
+                using var entryStream = entry.Open();
+                using var fileStream = filesystem.OpenRead(path);
+
+                fileStream.CopyTo(entryStream);
+            }
+        }
+
+        zipStream.Position = 0;
+
+        return zipStream;
+    }
+
+    private async Task DownloadFileFromStream(Stream stream)
+    {
+        const string fileName = "kiota.zip";
+
+        using var streamRef = new DotNetStreamReference(stream: stream, leaveOpen: true);
+
+        await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
+    }
+
+}
